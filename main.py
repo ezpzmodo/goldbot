@@ -5,6 +5,7 @@ import asyncio
 import nest_asyncio
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime
+import pytz
 
 # 이미 실행 중인 이벤트 루프에 중첩 허용
 nest_asyncio.apply()
@@ -12,7 +13,10 @@ nest_asyncio.apply()
 # 메시지 카운트를 저장할 딕셔너리
 message_count = {}
 
-# 메시지 감지 핸들러 (텍스트, 스티커 포함)
+# KST (한국 표준시) 시간대 설정
+KST = pytz.timezone('Asia/Seoul')
+
+# 메시지 감지 핸들러 (텍스트와 스티커 포함)
 async def count_messages(update: Update, context: CallbackContext):
     if update.message:
         user_id = update.message.from_user.id
@@ -36,7 +40,8 @@ async def show_ranking(update: Update, context: CallbackContext):
         await update.message.reply_text("아직 메시지가 없습니다.")
         return
 
-    ranking_message = f"📊 {datetime.now().strftime('%Y-%m-%d')} 메시지 순위 (상위 10명):\n"
+    current_time = datetime.now(KST).strftime('%Y-%m-%d')
+    ranking_message = f"📊 {current_time} 메시지 순위 (상위 10명):\n"
     for i, (user_id, data) in enumerate(ranking, start=1):
         ranking_message += f"{i}. {data['name']} - {data['count']}개 메시지\n"
 
@@ -66,11 +71,11 @@ async def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ranking", show_ranking))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, count_messages))  # 텍스트 메시지 감지
-    app.add_handler(MessageHandler(filters.Sticker.ALL, count_messages))  # 스티커 메시지 감지
+    app.add_handler(MessageHandler(filters.STICKER, count_messages))  # 스티커 메시지 감지
 
-    # 스케줄러 설정 (매일 자정에 초기화)
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(reset_message_count, 'cron', hour=0, minute=0, timezone='Asia/Seoul')
+    # 스케줄러 설정 (매일 자정에 초기화, 한국 시간)
+    scheduler = AsyncIOScheduler(timezone='Asia/Seoul')
+    scheduler.add_job(reset_message_count, 'cron', hour=0, minute=0)
     scheduler.start()
     
     # 봇 시작
