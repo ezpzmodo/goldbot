@@ -1,7 +1,8 @@
-app = "goldbot" # Fly.io의 앱 이름과 동일해야 합니다
+app = "goldbot"  # 앱 이름을 Fly.io 대시보드의 앱 이름과 일치시켜야 합니다.
+
+[build]
+  builder = "dockerfile"  # Dockerfile을 사용한다고 명시
+  dockerfile = "Dockerfile"  # Dockerfile의 파일 이름 (대소문자 주의)
 
 [env]
-PYTHON_VERSION = "3.9"
-
-[deploy]
-  release_command = "python main.py"
+  TELEGRAM_TOKEN = "${TELEGRAM_TOKEN}"  # 환경 변수 설정
