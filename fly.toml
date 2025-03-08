@@ -1,7 +1,7 @@
 app = "goldbot"
 
 [build]
-  builder = "dockerfile"
+ dockerfile = "./Dockerfile"
 
 [env]
   TELEGRAM_TOKEN = "YOUR_BOT_API_TOKEN"
