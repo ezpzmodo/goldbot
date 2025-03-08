@@ -1,0 +1,7 @@
+app = "goldbot" # Fly.io의 앱 이름과 동일해야 합니다
+
+[env]
+PYTHON_VERSION = "3.9"
+
+[deploy]
+  release_command = "python main.py"
