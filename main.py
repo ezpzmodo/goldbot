@@ -32,7 +32,7 @@ async def count_messages(update: Update, context: CallbackContext):
         else:
             message_count[user_id] = {'name': user_name, 'count': 1}
 
-# 순위 표시 핸들러
+# 순위 표시 핸들러 (1등부터 10등까지 표시)
 async def show_ranking(update: Update, context: CallbackContext):
     ranking = sorted(message_count.items(), key=lambda x: x[1]['count'], reverse=True)[:10]
     
@@ -42,9 +42,17 @@ async def show_ranking(update: Update, context: CallbackContext):
 
     # 한국 표준시 (KST) 시간으로 날짜 표시
     current_time = datetime.now(KST).strftime('%Y-%m-%d')
-    ranking_message = f"📊 {current_time} 메시지 순위 (상위 10명):\n"
+    ranking_message = f"📊 {current_time} 채팅 순위 *1위부터 10위* :\n"
+    
     for i, (user_id, data) in enumerate(ranking, start=1):
-        ranking_message += f"{i}. {data['name']} - {data['count']}개 메시지\n"
+        if i == 1:
+            ranking_message += f"🥇 1등: {data['name']} - {data['count']}개 메시지\n"
+        elif i == 2:
+            ranking_message += f"🥈 2등: {data['name']} - {data['count']}개 메시지\n"
+        elif i == 3:
+            ranking_message += f"🥉 3등: {data['name']} - {data['count']}개 메시지\n"
+        else:
+            ranking_message += f"{i}등: {data['name']} - {data['count']}개 메시지\n"
 
     await update.message.reply_text(ranking_message)
 
