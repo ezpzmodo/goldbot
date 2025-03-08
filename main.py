@@ -13,10 +13,10 @@ nest_asyncio.apply()
 # 메시지 카운트를 저장할 딕셔너리
 message_count = {}
 
-# KST (한국 표준시) 시간대 설정
+# 한국 시간대 설정 (Asia/Seoul)
 KST = pytz.timezone('Asia/Seoul')
 
-# 메시지 감지 핸들러 (텍스트와 스티커 포함)
+# 메시지 감지 핸들러 (텍스트, 스티커 포함)
 async def count_messages(update: Update, context: CallbackContext):
     if update.message:
         user_id = update.message.from_user.id
@@ -40,6 +40,7 @@ async def show_ranking(update: Update, context: CallbackContext):
         await update.message.reply_text("아직 메시지가 없습니다.")
         return
 
+    # 한국 표준시 (KST) 시간으로 날짜 표시
     current_time = datetime.now(KST).strftime('%Y-%m-%d')
     ranking_message = f"📊 {current_time} 메시지 순위 (상위 10명):\n"
     for i, (user_id, data) in enumerate(ranking, start=1):
@@ -59,7 +60,7 @@ async def start(update: Update, context: CallbackContext):
 
 # 메인 함수
 async def main():
-    # Replit 시크릿 환경변수에서 API 토큰 가져오기
+    # 환경변수에서 API 토큰 가져오기
     token = os.getenv("TELEGRAM_TOKEN")
     if not token:
         print("Error: TELEGRAM_TOKEN 환경 변수를 설정해주세요.")
@@ -71,9 +72,9 @@ async def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ranking", show_ranking))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, count_messages))  # 텍스트 메시지 감지
-    app.add_handler(MessageHandler(filters.STICKER, count_messages))  # 스티커 메시지 감지
+    app.add_handler(MessageHandler(filters.Sticker.ALL, count_messages))  # 스티커 메시지 감지
 
-    # 스케줄러 설정 (매일 자정에 초기화, 한국 시간)
+    # 스케줄러 설정 (매일 자정에 초기화, 한국 시간 기준)
     scheduler = AsyncIOScheduler(timezone='Asia/Seoul')
     scheduler.add_job(reset_message_count, 'cron', hour=0, minute=0)
     scheduler.start()
