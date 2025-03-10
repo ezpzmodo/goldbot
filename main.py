@@ -6,6 +6,10 @@ import nest_asyncio
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime
 import pytz
+import logging
+
+# 로그 설정
+logging.basicConfig(level=logging.INFO)
 
 # 이미 실행 중인 이벤트 루프에 중첩 허용
 nest_asyncio.apply()
@@ -34,6 +38,7 @@ async def count_messages(update: Update, context: CallbackContext):
 
 # 순위 표시 핸들러 (1등부터 10등까지 표시)
 async def show_ranking(update: Update, context: CallbackContext):
+    global message_count
     ranking = sorted(message_count.items(), key=lambda x: x[1]['count'], reverse=True)[:10]
     
     if not ranking:
@@ -42,25 +47,27 @@ async def show_ranking(update: Update, context: CallbackContext):
 
     # 한국 표준시 (KST) 시간으로 날짜 표시
     current_time = datetime.now(KST).strftime('%Y-%m-%d')
-    ranking_message = f"📊 {current_time} 채팅 순위 *1위부터 10위* \n"
+    ranking_message = f"📊 {current_time} 채팅 순위 (1등부터 10등까지):\n"
     
     for i, (user_id, data) in enumerate(ranking, start=1):
         if i == 1:
-            ranking_message += f"🥇 1위: {data['name']} - {data['count']}개 메시지\n"
+            ranking_message += f"🥇 1등: {data['name']} - {data['count']}개 메시지\n"
         elif i == 2:
-            ranking_message += f"🥈 2위: {data['name']} - {data['count']}개 메시지\n"
+            ranking_message += f"🥈 2등: {data['name']} - {data['count']}개 메시지\n"
         elif i == 3:
-            ranking_message += f"🥉 3위: {data['name']} - {data['count']}개 메시지\n"
+            ranking_message += f"🥉 3등: {data['name']} - {data['count']}개 메시지\n"
         else:
-            ranking_message += f"{i}위: {data['name']} - {data['count']}개 메시지\n"
+            ranking_message += f"{i}등: {data['name']} - {data['count']}개 메시지\n"
 
     await update.message.reply_text(ranking_message)
 
 # 메시지 카운트 초기화
 async def reset_message_count():
     global message_count
-    message_count = {}
-    print("메시지 카운트가 초기화되었습니다.")
+    message_count.clear()  # 기존 데이터를 완전히 초기화
+    current_time = datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S')
+    print(f"메시지 카운트가 초기화되었습니다. ({current_time})")
+    logging.info(f"메시지 카운트가 초기화되었습니다. ({current_time})")
 
 # 시작 메시지 핸들러
 async def start(update: Update, context: CallbackContext):
