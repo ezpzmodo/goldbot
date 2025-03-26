@@ -1,18 +1,4 @@
-app = "goldbot"
+app = "goldbot"       # Fly.io 앱 이름
 
-[build]
- dockerfile = "./Dockerfile"
-
-[env]
-  TELEGRAM_TOKEN = "YOUR_BOT_API_TOKEN"
-
-[http_service]
-  internal_port = 8080
-  force_https = true
-
-[deploy]
-  release_command = "python main.py"
-
-[mounts]
-  source = "data"
-  destination = "/app"
+[experimental]
+  auto_stop_machines = false  # 오토스탑 기능 끄기
