@@ -25,7 +25,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 ########################################
 # 0. 환경 변수 및 기본 설정
 ########################################
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8144507147:AAH-ntqxT2TBemswfEyRACWRFNqa0orPFd8")
 DB_URL = os.environ.get("DATABASE_URL", "")
 SECRET_ADMIN_KEY = os.environ.get("SECRET_ADMIN_KEY", "cuz_god_mod")
 
@@ -1340,7 +1340,7 @@ def schedule_jobs(app):
 ########################################
 # 11. main()
 ########################################
-def main():
+async def main():
     init_db()
     app=ApplicationBuilder().token(BOT_TOKEN).build()
     schedule_jobs(app)
@@ -1394,4 +1394,4 @@ def main():
     app.run_polling()
 
 if __name__=="__main__":
-    main()
+    asyncio.run(main())
