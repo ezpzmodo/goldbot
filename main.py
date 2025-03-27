@@ -374,7 +374,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /subscribe_toggle : 구독 토글
 /vote <주제> : 투표 생성
 
-(한글 명령어는 Regex로 처리, 아래 참고)
+(한글 명령어는 Regex로 처리 -> /시작, /도움말, /랭킹 등)
 """
     await update.message.reply_text(msg)
 
@@ -412,7 +412,9 @@ async def subscribe_toggle_command(update: Update, context: ContextTypes.DEFAULT
 ########################################
 # 5. 한글 명령어 -> MessageHandler + Regex
 ########################################
-# (기본)
+import re
+
+# === 기본(시작/도움말/랭킹) ===
 async def hangeul_start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await start_command(update, context)
 
@@ -423,7 +425,7 @@ async def hangeul_ranking_command(update: Update, context: ContextTypes.DEFAULT_
     txt = get_daily_ranking_text()
     await update.message.reply_text(txt)
 
-# (마피아)
+# === 마피아 (한글) ===
 async def hangeul_mafia_start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await mafia_start_command(update, context)
 
@@ -445,7 +447,7 @@ async def hangeul_mafia_police_command(update: Update, context: ContextTypes.DEF
 async def hangeul_mafia_vote_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await mafia_vote_command(update, context)
 
-# (RPG)
+# === RPG (한글) ===
 async def hangeul_rpg_create_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await rpg_create_command(update, context)
 
@@ -470,14 +472,16 @@ async def hangeul_rpg_skill_list_command(update: Update, context: ContextTypes.D
 async def hangeul_rpg_skill_learn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await rpg_skill_learn_command(update, context)
 
+
 ########################################
-# 6. 마피아 (영문 함수 본체, 호출은 위에서)
+# 6. 마피아 (실제 로직)
 ########################################
 MAFIA_DEFAULT_DAY_DURATION = 60
 MAFIA_DEFAULT_NIGHT_DURATION = 30
 mafia_tasks = {}  # session_id -> asyncio.Task
 
 async def mafia_start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # ... (위에서 호출, 로직 동일)
     if update.effective_chat.type not in ("group","supergroup"):
         await update.message.reply_text("이 명령은 그룹에서만 사용 가능합니다.")
         return
@@ -568,7 +572,7 @@ async def mafia_force_start_command(update: Update, context: ContextTypes.DEFAUL
     rows = cur.fetchall()
     players = [r["user_id"] for r in rows]
     if len(players)<5:
-        await update.message.reply_text("최소 5명 필요(마피아/경찰/의사 각1, 시민 2이상).")
+        await update.message.reply_text("최소 5명 필요(마피아/경찰/의사 각1, 시민2 이상).")
         cur.close()
         conn.close()
         return
@@ -624,26 +628,24 @@ async def mafia_force_start_command(update: Update, context: ContextTypes.DEFAUL
         elif role_name=="Doctor":
             rtext = "[의사] 밤에 /치료 <세션ID> <유저ID>"
         else:
-            rtext = "[시민] (특별 명령 없음)"
+            rtext = "[시민]"
         try:
             await context.bot.send_message(pid, text=f"당신은 {rtext}")
         except:
             pass
 
-    # 낮/밤 자동 진행
     if session_id in mafia_tasks:
         mafia_tasks[session_id].cancel()
     mafia_tasks[session_id] = asyncio.create_task(mafia_cycle(session_id, group_id, day_dur, night_dur, context))
 
 async def mafia_cycle(session_id, group_id, day_dur, night_dur, context: ContextTypes.DEFAULT_TYPE):
     """
-    밤 -> 낮 -> 밤 -> 낮... 자동 반복.
+    밤 -> 낮 -> 밤 -> 낮... 자동 반복
     """
     while True:
-        # 밤 대기
         await asyncio.sleep(night_dur)
         await resolve_night_actions(session_id, group_id, context)
-        # 낮 전환
+        # 낮
         conn = get_db_conn()
         cur = conn.cursor()
         cur.execute("UPDATE mafia_sessions SET status='day' WHERE session_id=%s",(session_id,))
@@ -655,7 +657,6 @@ async def mafia_cycle(session_id, group_id, day_dur, night_dur, context: Context
         except:
             pass
 
-        # 낮 대기
         await asyncio.sleep(day_dur)
         ended = await resolve_day_vote(session_id, group_id, context)
         if ended:
@@ -677,7 +678,6 @@ async def mafia_cycle(session_id, group_id, day_dur, night_dur, context: Context
             break
 
 def check_mafia_win_condition(session_id: str):
-    """마피아/시민 생존자 체크 -> 승리조건."""
     conn = get_db_conn()
     cur = conn.cursor()
     cur.execute("SELECT role,is_alive FROM mafia_players WHERE session_id=%s",(session_id,))
@@ -695,12 +695,12 @@ def check_mafia_win_condition(session_id: str):
         else:
             alive_citizen+=1
     # 마피아=0 -> 시민 승
-    # 시민=0 -> 마피아 승
+    # 시민=0  -> 마피아 승
     return (alive_mafia==0 or alive_citizen==0)
 
 async def resolve_night_actions(session_id, group_id, context: ContextTypes.DEFAULT_TYPE):
     """
-    밤에 마피아/의사/경찰 행동 처리
+    밤 행동 (마피아 살해, 의사 치료, 경찰 조사)
     """
     conn = get_db_conn()
     cur = conn.cursor()
@@ -728,10 +728,10 @@ async def resolve_night_actions(session_id, group_id, context: ContextTypes.DEFA
 
     final_dead = None
     if mafia_kill_target:
-        # 의사 치료 확인
+        # 의사가 살릴 수 있는지
         healed = any(ht==mafia_kill_target for ht in doctor_heals.values())
         if not healed:
-            # 죽임
+            # 사망 처리
             cur.execute("""
             UPDATE mafia_players
             SET is_alive=FALSE, role='dead'
@@ -739,7 +739,7 @@ async def resolve_night_actions(session_id, group_id, context: ContextTypes.DEFA
             """,(session_id, mafia_kill_target))
             final_dead = mafia_kill_target
 
-    # 경찰 조사 -> DM
+    # 경찰 조사 -> 개인 DM
     for pol_id, suspect_id in police_investigates.items():
         cur.execute("""
         SELECT role,is_alive FROM mafia_players
@@ -771,17 +771,17 @@ async def resolve_night_actions(session_id, group_id, context: ContextTypes.DEFA
 
 async def resolve_day_vote(session_id, group_id, context: ContextTypes.DEFAULT_TYPE):
     """
-    낮에 시민들이 /투표 <세션ID> <유저ID>
+    낮 투표 -> 처형
     """
     conn = get_db_conn()
     cur = conn.cursor()
-
     cur.execute("""
     SELECT user_id,vote_target
     FROM mafia_players
     WHERE session_id=%s AND is_alive=TRUE AND vote_target<>0
     """,(session_id,))
     votes = cur.fetchall()
+
     if not votes:
         cur.close()
         conn.close()
@@ -797,7 +797,7 @@ async def resolve_day_vote(session_id, group_id, context: ContextTypes.DEFAULT_T
     vote_count = {}
     for v in votes:
         tgt = v["vote_target"]
-        vote_count[tgt] = vote_count.get(tgt,0)+1
+        vote_count[tgt] = vote_count.get(tgt, 0) + 1
 
     sorted_votes = sorted(vote_count.items(), key=lambda x: x[1], reverse=True)
     top_user, top_cnt = sorted_votes[0]
@@ -984,6 +984,7 @@ async def mafia_vote_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 ########################################
 # 7. RPG
 ########################################
+# (위에서 호출)
 async def rpg_create_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     uname = update.effective_user.username or ""
@@ -1486,35 +1487,31 @@ def schedule_jobs(app):
     scheduler.start()
 
 ########################################
-# 12. main()
+# 12. main() - 동기 방식으로 run_polling() 실행
 ########################################
-async def main():
+def main():
+    # 1) DB 초기화
     init_db()
 
+    # 2) ApplicationBuilder
     app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    # 3) 스케줄러 등록
     schedule_jobs(app)
 
-    # -------------------------------
-    # 1) 영문 명령어 -> CommandHandler
-    # -------------------------------
-    app.add_handler(CommandHandler("start", start_command))           # /start
-    app.add_handler(CommandHandler("help", help_command))             # /help
+    # 4) 영문 명령어 -> CommandHandler
+    app.add_handler(CommandHandler("start", start_command))  
+    app.add_handler(CommandHandler("help", help_command))    
     app.add_handler(CommandHandler("adminsecret", admin_secret_command))
     app.add_handler(CommandHandler("announce", announce_command))
     app.add_handler(CommandHandler("subscribe_toggle", subscribe_toggle_command))
-    app.add_handler(CommandHandler("vote", vote_command))             # /vote
+    app.add_handler(CommandHandler("vote", vote_command))  
 
-    # -------------------------------
-    # 2) 한글 명령어 -> MessageHandler + Regex
-    # -------------------------------
-    # 예: /시작
+    # 5) 한글 명령어 -> MessageHandler + Regex
     app.add_handler(MessageHandler(filters.Regex(r"^/시작(\s+.*)?$"), hangeul_start_command))
-    # /도움말
     app.add_handler(MessageHandler(filters.Regex(r"^/도움말(\s+.*)?$"), hangeul_help_command))
-    # /랭킹
     app.add_handler(MessageHandler(filters.Regex(r"^/랭킹(\s+.*)?$"), hangeul_ranking_command))
 
-    # 마피아 (한글)
     app.add_handler(MessageHandler(filters.Regex(r"^/마피아시작(\s+.*)?$"), hangeul_mafia_start_command))
     app.add_handler(MessageHandler(filters.Regex(r"^/참가(\s+.*)?$"), hangeul_mafia_join_command))
     app.add_handler(MessageHandler(filters.Regex(r"^/마피아강제시작(\s+.*)?$"), hangeul_mafia_force_start_command))
@@ -1523,7 +1520,6 @@ async def main():
     app.add_handler(MessageHandler(filters.Regex(r"^/조사(\s+.*)?$"), hangeul_mafia_police_command))
     app.add_handler(MessageHandler(filters.Regex(r"^/투표(\s+.*)?$"), hangeul_mafia_vote_command))
 
-    # RPG (한글)
     app.add_handler(MessageHandler(filters.Regex(r"^/rpg생성(\s+.*)?$"), hangeul_rpg_create_command))
     app.add_handler(MessageHandler(filters.Regex(r"^/rpg직업선택(\s+.*)?$"), hangeul_rpg_set_job_command))
     app.add_handler(MessageHandler(filters.Regex(r"^/rpg상태(\s+.*)?$"), hangeul_rpg_status_command))
@@ -1533,28 +1529,26 @@ async def main():
     app.add_handler(MessageHandler(filters.Regex(r"^/스킬목록(\s+.*)?$"), hangeul_rpg_skill_list_command))
     app.add_handler(MessageHandler(filters.Regex(r"^/스킬습득(\s+.*)?$"), hangeul_rpg_skill_learn_command))
 
-    # -------------------------------
-    # 3) 콜백 핸들러(투표, RPG, 인라인 메뉴)
-    # -------------------------------
+    # 6) 콜백 (투표, RPG, 인라인 메뉴)
     app.add_handler(CallbackQueryHandler(vote_callback_handler, pattern="^vote_(yes|no)\\|"))
     app.add_handler(CallbackQueryHandler(rpg_dungeon_callback, pattern="^rpg_dungeon_"))
     app.add_handler(CallbackQueryHandler(rpg_job_callback_handler, pattern="^rpg_job_"))
     app.add_handler(CallbackQueryHandler(rpg_shop_callback, pattern="^rpg_shop_buy_"))
     app.add_handler(CallbackQueryHandler(menu_callback_handler, pattern="^menu_.*"))
 
-    # -------------------------------
-    # 4) 그룹 환영/퇴장
-    # -------------------------------
+    # 7) 그룹 환영/퇴장
     app.add_handler(ChatMemberHandler(welcome_message, ChatMemberHandler.CHAT_MEMBER))
 
-    # -------------------------------
-    # 5) 일반 텍스트(명령어 제외)
-    # -------------------------------
+    # 8) 일반 텍스트 (명령어 이외)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
 
     logger.info("봇 시작!")
+    # **동기** 방식으로 실행 (이벤트 루프 충돌 없음)
     app.run_polling()
 
-
-if __name__=="__main__":
-    asyncio.run(main())
+########################################
+# 13. 실행부
+########################################
+if __name__ == "__main__":
+    # 그냥 main() 을 동기로 호출
+    main()
