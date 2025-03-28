@@ -1884,7 +1884,10 @@ def main():
     app.add_handler(MessageHandler(filters.Regex(r"^/치료(\s.*)?$"), mafia_doctor_command))
     app.add_handler(MessageHandler(filters.Regex(r"^/조사(\s.*)?$"), mafia_police_command))
     app.add_handler(MessageHandler(filters.Regex(r"^/투표(\s.*)?$"), mafia_vote_command))
-    app.add_handler(CommandHandler("방삭제", mafia_delete_room)) # /방삭제 <세션ID>
+    app.add_handler(MessageHandler(
+    filters.Regex(r"^/방삭제(\s.*)?$"),
+    mafia_delete_room
+))
 
     # RPG
     app.add_handler(MessageHandler(filters.Regex(r"^/rpg생성(\s.*)?$"), rpg_create_command))
