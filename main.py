@@ -27,7 +27,7 @@ from telegram.ext import (
 from apscheduler.schedulers.background import BackgroundScheduler
 
 ###############################################################################
-# 0. 환경변수 & 기본 설정
+# 0. 환경변수 & 기본설정
 ###############################################################################
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 DB_URL = os.environ.get("DATABASE_URL", "")
@@ -45,7 +45,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 ###############################################################################
-# 1. DB 연결 & 테이블 초기화
+# 1. DB 연결 & 테이블
 ###############################################################################
 def get_db_conn():
     return psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
@@ -54,11 +54,11 @@ def init_db():
     conn = get_db_conn()
     c = conn.cursor()
 
-    # 유저 (관리자/구독/이름)
+    # 유저
     c.execute("""
     CREATE TABLE IF NOT EXISTS users (
       user_id BIGINT PRIMARY KEY,
-      username TEXT,              -- (first+last) OR @username OR '이름없음'
+      username TEXT,
       is_subscribed BOOLEAN DEFAULT FALSE,
       is_admin BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMP DEFAULT NOW()
@@ -68,8 +68,8 @@ def init_db():
     # 마피아
     c.execute("""
     CREATE TABLE IF NOT EXISTS mafia_sessions (
-      session_id TEXT PRIMARY KEY,       -- 12자리
-      status TEXT,                       -- waiting/night/day/ended
+      session_id TEXT PRIMARY KEY,
+      status TEXT,          -- waiting/night/day/ended
       group_id BIGINT,
       created_at TIMESTAMP DEFAULT NOW(),
       day_duration INT DEFAULT 60,
@@ -80,7 +80,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS mafia_players (
       session_id TEXT,
       user_id BIGINT,
-      role TEXT,               -- Mafia/Police/Doctor/Citizen/dead
+      role TEXT,  -- Mafia/Police/Doctor/Citizen/dead
       is_alive BOOLEAN DEFAULT TRUE,
       vote_target BIGINT DEFAULT 0,
       heal_target BIGINT DEFAULT 0,
@@ -139,6 +139,8 @@ def init_db():
       PRIMARY KEY(user_id, item_id)
     );
     """)
+
+    # 파티(미사용)
     c.execute("""
     CREATE TABLE IF NOT EXISTS rpg_parties (
       party_id SERIAL PRIMARY KEY,
@@ -154,13 +156,13 @@ def init_db():
     );
     """)
 
-    # 매일 채팅랭킹
+    # 일일채팅
     c.execute("""
     CREATE TABLE IF NOT EXISTS daily_chat_count (
       user_id BIGINT,
       date_str TEXT,
       count INT DEFAULT 0,
-      PRIMARY KEY(user_id,date_str)
+      PRIMARY KEY(user_id, date_str)
     );
     """)
 
@@ -169,34 +171,31 @@ def init_db():
     conn.close()
 
 ###############################################################################
-# 2. 유저/관리자/구독
+# 2. 유저/관리/구독
 ###############################################################################
-def ensure_user_in_db(uid:int, fname:str, lname:str, tg_username:str):
-    """
-    - first_name + last_name 합치고, 둘 다 비면 @username, 그것마저 없으면 '이름없음'
-    """
-    ff = (fname or "").strip()
-    ll = (lname or "").strip()
-    full = ff
+def ensure_user_in_db(uid:int, fname:str, lname:str, t_username:str):
+    """ first+last가 없으면 @username, 그것도 없으면 '이름없음' """
+    ff=(fname or "").strip()
+    ll=(lname or "").strip()
+    combined=ff
     if ll:
-        full+=" "+ll
-    if not full.strip():
-        if tg_username:
-            full=f"@{tg_username}"
+        combined+=" "+ll
+    if not combined.strip():
+        if t_username:
+            combined=f"@{t_username}"
         else:
-            full="이름없음"
+            combined="이름없음"
     conn=get_db_conn()
     c=conn.cursor()
     c.execute("SELECT * FROM users WHERE user_id=%s",(uid,))
     row=c.fetchone()
     if not row:
-        c.execute("INSERT INTO users(user_id,username) VALUES(%s,%s)",(uid,full.strip()))
+        c.execute("INSERT INTO users(user_id,username) VALUES(%s,%s)",(uid,combined.strip()))
     else:
-        if row["username"]!=full.strip():
-            c.execute("UPDATE users SET username=%s WHERE user_id=%s",(full.strip(),uid))
+        if row["username"]!=combined.strip():
+            c.execute("UPDATE users SET username=%s WHERE user_id=%s",(combined.strip(),uid))
     conn.commit()
-    c.close()
-    conn.close()
+    c.close();conn.close()
 
 def is_admin_db(uid:int):
     conn=get_db_conn()
@@ -226,11 +225,10 @@ def set_subscribe(uid:int,val:bool):
     c=conn.cursor()
     c.execute("UPDATE users SET is_subscribed=%s WHERE user_id=%s",(val,uid))
     conn.commit()
-    c.close()
-    conn.close()
+    c.close();conn.close()
 
 ###############################################################################
-# 3. 그룹 관리(불량단어,링크,스팸), 환영/퇴장
+# 3. 그룹관리(불량단어,링크,스팸), 환영/퇴장
 ###############################################################################
 BAD_WORDS=["나쁜말1","나쁜말2"]
 user_message_times={}
@@ -240,15 +238,13 @@ async def welcome_message(update:Update, context:ContextTypes.DEFAULT_TYPE):
     if cmu.new_chat_member.status=="member":
         user=cmu.new_chat_member.user
         await context.bot.send_message(
-            chat_id=cmu.chat.id,
-            text=f"환영합니다, {user.mention_html()}!",
+            cmu.chat.id, f"환영합니다, {user.mention_html()}!",
             parse_mode="HTML"
         )
     elif cmu.new_chat_member.status in ("left","kicked"):
         user=cmu.new_chat_member.user
         await context.bot.send_message(
-            chat_id=cmu.chat.id,
-            text=f"{user.full_name}님이 나갔습니다."
+            cmu.chat.id, f"{user.full_name}님이 나갔습니다."
         )
 
 async def filter_bad_words_and_spam_and_links(update:Update, context:ContextTypes.DEFAULT_TYPE):
@@ -274,7 +270,7 @@ async def filter_bad_words_and_spam_and_links(update:Update, context:ContextType
         return
 
 ###############################################################################
-# 4. 일일 채팅 랭킹(매일0시 리셋, 1~3위 이모지)
+# 4. 채팅랭킹(매일 0시 리셋)
 ###############################################################################
 def increment_daily_chat_count(uid:int):
     now=datetime.datetime.now(tz=KST)
@@ -288,8 +284,7 @@ def increment_daily_chat_count(uid:int):
     DO UPDATE SET count=daily_chat_count.count+1
     """,(uid,ds))
     conn.commit()
-    c.close()
-    conn.close()
+    c.close();conn.close()
 
 def reset_daily_chat_count():
     now=datetime.datetime.now(tz=KST)
@@ -299,8 +294,7 @@ def reset_daily_chat_count():
     c=conn.cursor()
     c.execute("DELETE FROM daily_chat_count WHERE date_str=%s",(ys,))
     conn.commit()
-    c.close()
-    conn.close()
+    c.close();conn.close()
 
 def get_daily_ranking_text():
     now=datetime.datetime.now(tz=KST)
@@ -308,7 +302,7 @@ def get_daily_ranking_text():
     conn=get_db_conn()
     c=conn.cursor()
     c.execute("""
-    SELECT dc.user_id, dc.count, u.username
+    SELECT dc.user_id,dc.count,u.username
     FROM daily_chat_count dc
     LEFT JOIN users u ON u.user_id=dc.user_id
     WHERE dc.date_str=%s
@@ -338,11 +332,11 @@ def get_daily_ranking_text():
 async def start_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     user=update.effective_user
     uid=user.id
-    ensure_user_in_db(uid,user.first_name or "", user.last_name or "", user.username or "")
+    ensure_user_in_db(uid, user.first_name or "", user.last_name or "", user.username or "")
     owner_id=str(uid)
     text=(
       "다기능 봇.\n"
-      "인라인 버튼은 이 대화 호출자만 누를 수 있음."
+      "인라인 버튼은 이 대화 호출자만 클릭 가능."
     )
     kb=[
       [
@@ -359,11 +353,15 @@ async def start_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
 async def help_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     msg=(
         "[도움말]\n"
-        "/start /help /adminsecret <키> /announce <msg>(관리자)\n"
-        "/subscribe_toggle /vote <주제>\n\n"
-        "한글명령어:\n"
+        "/start\n"
+        "/help\n"
+        "/adminsecret <키>\n"
+        "/announce <메시지> (관리자)\n"
+        "/subscribe_toggle\n"
+        "/vote <주제>\n\n"
+        "한글:\n"
         "/시작 /도움말 /랭킹\n"
-        "/마피아시작 /마피아목록 /참가 /마피아강제시작 /살해 /치료 /조사 /투표\n"
+        "/마피아시작 /마피아목록 /참가 /마피아강제시작 /방나가기 /살해 /치료 /조사 /투표\n"
         "/rpg생성 /rpg직업선택 /rpg상태 /던전 /상점 /인벤토리 /스킬목록 /스킬습득 /내정보"
     )
     await update.message.reply_text(msg)
@@ -402,11 +400,11 @@ async def subscribe_toggle_command(update:Update, context:ContextTypes.DEFAULT_T
 async def vote_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     topic=" ".join(context.args)
     if not topic:
-        await update.message.reply_text("사용:/vote <주제>")
+        await update.message.reply_text("사용법:/vote <주제>")
         return
     kb=[[InlineKeyboardButton("👍",callback_data=f"vote_yes|{topic}"),
          InlineKeyboardButton("👎",callback_data=f"vote_no|{topic}")]]
-    await update.message.reply_text(f"[투표]\n{topic}", reply_markup=InlineKeyboardMarkup(kb))
+    await update.message.reply_text(f"[투표]\n{topic}",reply_markup=InlineKeyboardMarkup(kb))
 
 async def vote_callback_handler(update:Update, context:ContextTypes.DEFAULT_TYPE):
     q=update.callback_query
@@ -421,21 +419,17 @@ async def vote_callback_handler(update:Update, context:ContextTypes.DEFAULT_TYPE
     else:
         await q.edit_message_text(f"[투표]{topic}\n\n{user.first_name}님이 👎!")
 
-
 ###############################################################################
 # 6. 한글 명령어(Regex)
 ###############################################################################
 import re
 
-# /시작
 async def hangeul_start_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     await start_command(update, context)
 
-# /도움말
 async def hangeul_help_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     await help_command(update, context)
 
-# /랭킹
 async def hangeul_ranking_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     txt=get_daily_ranking_text()
     await update.message.reply_text(txt)
@@ -465,9 +459,12 @@ async def hangeul_mafia_vote_command(update:Update, context:ContextTypes.DEFAULT
 async def hangeul_mafia_list_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     await mafia_list_command(update, context)
 
+# **추가**: /방나가기
+async def hangeul_mafia_leave_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
+    await mafia_leave_command(update, context)
 
 ###############################################################################
-# 7. 마피아 로직 (의사/경찰/시민/마피아, 12자리 ID)
+# 7. 마피아 로직
 ###############################################################################
 MAFIA_DEFAULT_DAY_DURATION=60
 MAFIA_DEFAULT_NIGHT_DURATION=30
@@ -492,12 +489,12 @@ async def mafia_list_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     if not rows:
         await update.message.reply_text("대기중인 마피아 세션이 없습니다.")
         return
-    txt="[대기중 세션]\n"
+    txt="[대기중인 마피아 세션]\n"
     kb=[]
     for r in rows:
         sid=r["session_id"]
         txt+=f"- {sid}\n"
-        kb.append([InlineKeyboardButton(f"{sid} 참가", callback_data=f"mafia_join_{sid}")])
+        kb.append([InlineKeyboardButton(f"{sid} 참가",callback_data=f"mafia_join_{sid}")])
     await update.message.reply_text(txt,reply_markup=InlineKeyboardMarkup(kb))
 
 async def mafia_list_join_callback(update:Update, context:ContextTypes.DEFAULT_TYPE):
@@ -510,22 +507,37 @@ async def mafia_list_join_callback(update:Update, context:ContextTypes.DEFAULT_T
     sid=data.split("_",2)[2]
     user=q.from_user
     uid=user.id
-    ensure_user_in_db(uid, user.first_name or "", user.last_name or "", user.username or "")
+    ensure_user_in_db(uid,user.first_name or "", user.last_name or "", user.username or "")
 
     conn=get_db_conn()
     c=conn.cursor()
     c.execute("SELECT * FROM mafia_sessions WHERE session_id=%s",(sid,))
     sess=c.fetchone()
     if not sess or sess["status"]!="waiting":
-        await q.edit_message_text("해당 세션이 없거나 이미 시작됨.")
+        await q.edit_message_text("세션없거나 이미 시작됨.")
         c.close();conn.close()
         return
+    # 이미 대기중인 세션에 참가?
+    # 한 사람이 동시에 2개 waiting세션 참가 불가
+    c.execute("""
+    SELECT ms.session_id
+    FROM mafia_players mp
+    JOIN mafia_sessions ms ON ms.session_id=mp.session_id
+    WHERE mp.user_id=%s AND ms.status='waiting'
+    """,(uid,))
+    already=c.fetchone()
+    if already:
+        await q.edit_message_text("이미 다른 대기 세션에 참가중이므로 불가.")
+        c.close();conn.close()
+        return
+
     c.execute("SELECT * FROM mafia_players WHERE session_id=%s AND user_id=%s",(sid,uid))
     row=c.fetchone()
     if row:
-        await q.edit_message_text("이미참가중.")
+        await q.edit_message_text("이미 참가중.")
         c.close();conn.close()
         return
+
     c.execute("""
     INSERT INTO mafia_players(session_id,user_id,role)
     VALUES(%s,%s,%s)
@@ -556,7 +568,7 @@ async def mafia_start_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
       f"마피아 세션 생성: {session_id}\n"
       f"/참가 {session_id}\n"
       f"/마피아강제시작 {session_id}\n"
-      "또는 /마피아목록 으로 확인"
+      "또는 /마피아목록 으로 확인 가능"
     )
 
 async def mafia_join_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
@@ -567,20 +579,33 @@ async def mafia_join_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     session_id=args[0]
     user=update.effective_user
     uid=user.id
-    ensure_user_in_db(uid,user.first_name or "",user.last_name or "", user.username or "")
+    ensure_user_in_db(uid,user.first_name or "",user.last_name or "",user.username or "")
 
     conn=get_db_conn()
     c=conn.cursor()
     c.execute("SELECT * FROM mafia_sessions WHERE session_id=%s",(session_id,))
     sess=c.fetchone()
     if not sess:
-        await update.message.reply_text("세션없음.")
+        await update.message.reply_text("해당 세션 없음.")
         c.close();conn.close()
         return
     if sess["status"]!="waiting":
-        await update.message.reply_text("이미 시작됨.")
+        await update.message.reply_text("이미 시작된 세션.")
         c.close();conn.close()
         return
+    # 한 사람이 이미 다른 waiting 세션에 있는지 체크
+    c.execute("""
+    SELECT ms.session_id
+    FROM mafia_players mp
+    JOIN mafia_sessions ms ON ms.session_id=mp.session_id
+    WHERE mp.user_id=%s AND ms.status='waiting'
+    """,(uid,))
+    already=c.fetchone()
+    if already:
+        await update.message.reply_text("이미 다른 대기 세션에 참가중이므로 불가.")
+        c.close();conn.close()
+        return
+
     c.execute("SELECT * FROM mafia_players WHERE session_id=%s AND user_id=%s",(session_id,uid))
     row=c.fetchone()
     if row:
@@ -592,12 +617,47 @@ async def mafia_join_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     c.execute("SELECT COUNT(*) as c FROM mafia_players WHERE session_id=%s",(session_id,))
     n=c.fetchone()["c"]
     c.close();conn.close()
-    await update.message.reply_text(f"참가 완료. 현재 {n}명 대기중.")
+    await update.message.reply_text(f"참가완료. 현재 {n}명 대기중.")
+
+async def mafia_leave_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
+    """
+    /방나가기 <세션ID>
+    - waiting 상태인 세션일 경우 -> DB에서 제거
+    - 이미 시작이면 '나갈 수 없음'
+    """
+    args=context.args
+    if not args:
+        await update.message.reply_text("사용:/방나가기 <세션ID>")
+        return
+    session_id=args[0]
+    uid=update.effective_user.id
+
+    conn=get_db_conn()
+    c=conn.cursor()
+    c.execute("SELECT * FROM mafia_sessions WHERE session_id=%s",(session_id,))
+    sess=c.fetchone()
+    if not sess:
+        await update.message.reply_text("세션없음.")
+        c.close();conn.close()
+        return
+    if sess["status"]!="waiting":
+        await update.message.reply_text("이미 시작된 세션에서 탈퇴 불가.")
+        c.close();conn.close()
+        return
+    # 대기중인 세션
+    c.execute("DELETE FROM mafia_players WHERE session_id=%s AND user_id=%s",(session_id,uid))
+    rowcount=c.rowcount
+    conn.commit()
+    c.close();conn.close()
+    if rowcount>0:
+        await update.message.reply_text(f"{session_id} 세션에서 나갔습니다.")
+    else:
+        await update.message.reply_text("해당 세션에 참가중이 아님.")
 
 async def mafia_force_start_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     args=context.args
-    if not args:
-        await update.message.reply_text("사용:/마피아강제시작 <세션ID>")
+    if not args or len(args)<1:
+        await update.message.reply_text("사용법:/마피아강제시작 <세션ID>")
         return
     session_id=args[0]
     conn=get_db_conn()
@@ -605,14 +665,14 @@ async def mafia_force_start_command(update:Update, context:ContextTypes.DEFAULT_
     c.execute("SELECT * FROM mafia_sessions WHERE session_id=%s",(session_id,))
     sess=c.fetchone()
     if not sess or sess["status"]!="waiting":
-        await update.message.reply_text("세션없거나이미시작.")
+        await update.message.reply_text("세션이 없거나 이미 시작됨.")
         c.close();conn.close()
         return
     c.execute("SELECT user_id FROM mafia_players WHERE session_id=%s",(session_id,))
     rows=c.fetchall()
     players=[r["user_id"] for r in rows]
     if len(players)<5:
-        await update.message.reply_text("최소5명 필요(마피아1,경찰1,의사1,시민2+).")
+        await update.message.reply_text("최소5명 필요.")
         c.close();conn.close()
         return
     random.shuffle(players)
@@ -629,20 +689,16 @@ async def mafia_force_start_command(update:Update, context:ContextTypes.DEFAULT_
         SET role=%s,is_alive=TRUE,vote_target=0,heal_target=0,investigate_target=0
         WHERE session_id=%s AND user_id=%s
         """,(role,session_id,pid))
-    c.execute("""
-    UPDATE mafia_sessions SET status='night'
-    WHERE session_id=%s
-    """,(session_id,))
+    c.execute("UPDATE mafia_sessions SET status='night' WHERE session_id=%s",(session_id,))
     conn.commit()
     group_id=sess["group_id"]
     day_dur=sess["day_duration"]
     night_dur=sess["night_duration"]
     c.close();conn.close()
 
-    await update.message.reply_text(
-      f"마피아 게임 시작! (세션:{session_id}), 첫번째 밤."
-    )
+    await update.message.reply_text(f"마피아 게임 시작! (세션:{session_id}) 첫번째 밤.")
 
+    # 역할 안내 DM
     for pid in players:
         conn2=get_db_conn()
         c2=conn2.cursor()
@@ -652,25 +708,26 @@ async def mafia_force_start_command(update:Update, context:ContextTypes.DEFAULT_
         if not rr: continue
         ro=rr["role"]
         if ro=="Mafia":
-            txt="당신은 [마피아] 밤에 /살해 <세션ID> <유저ID>"
+            txt="당신은 [마피아] => 밤에 /살해 <세션ID> <유저ID>"
         elif ro=="Police":
-            txt="당신은 [경찰] 밤에 /조사 <세션ID> <유저ID>"
+            txt="당신은 [경찰] => 밤에 /조사 <세션ID> <유저ID>"
         elif ro=="Doctor":
-            txt="당신은 [의사] 밤에 /치료 <세션ID> <유저ID>"
+            txt="당신은 [의사] => 밤에 /치료 <세션ID> <유저ID>"
         else:
             txt="당신은 [시민]"
         try:
-            await context.bot.send_message(pid,txt)
+            await context.bot.send_message(pid, txt)
         except:
             pass
 
+    # 타이머
     if session_id in mafia_tasks:
         mafia_tasks[session_id].cancel()
     mafia_tasks[session_id]=asyncio.create_task(
         mafia_cycle(session_id, group_id, day_dur, night_dur, context)
     )
 
-async def mafia_cycle(session_id, group_id, day_dur, night_dur, context):
+async def mafia_cycle(session_id, group_id, day_dur, night_dur, context:ContextTypes.DEFAULT_TYPE):
     while True:
         await asyncio.sleep(night_dur)
         await resolve_night_actions(session_id, group_id, context)
@@ -680,8 +737,9 @@ async def mafia_cycle(session_id, group_id, day_dur, night_dur, context):
         c.execute("UPDATE mafia_sessions SET status='day' WHERE session_id=%s",(session_id,))
         conn.commit()
         c.close();conn.close()
+
         try:
-            await context.bot.send_message(group_id, text=f"밤이 끝났습니다. 낮({day_dur}초) 시작!\n/투표 <세션ID> <유저ID>")
+            await context.bot.send_message(group_id, f"밤이 끝났습니다. 낮({day_dur}초) 시작!\n/투표 <세션ID> <유저ID>")
         except:
             pass
 
@@ -694,10 +752,12 @@ async def mafia_cycle(session_id, group_id, day_dur, night_dur, context):
         c2.execute("UPDATE mafia_sessions SET status='night' WHERE session_id=%s",(session_id,))
         conn2.commit()
         c2.close();conn2.close()
+
         try:
-            await context.bot.send_message(group_id, text=f"낮이 끝났습니다. 밤({night_dur}초) 시작!")
+            await context.bot.send_message(group_id, f"낮이 끝났습니다. 밤({night_dur}초) 시작!")
         except:
             pass
+
         if check_mafia_win_condition(session_id):
             break
 
@@ -725,21 +785,21 @@ async def resolve_night_actions(session_id, group_id, context):
     """,(session_id,))
     rows=c.fetchall()
     mafia_kill_target=None
-    doctor_heals={}
-    police_invest={}
+    doc_heal={}
+    pol_invest={}
     for r in rows:
         if r["role"]=="Mafia" and r["is_alive"]:
             if r["vote_target"]!=0:
                 mafia_kill_target=r["vote_target"]
         elif r["role"]=="Doctor" and r["is_alive"]:
             if r["heal_target"]!=0:
-                doctor_heals[r["user_id"]]=r["heal_target"]
+                doc_heal[r["user_id"]]=r["heal_target"]
         elif r["role"]=="Police" and r["is_alive"]:
             if r["investigate_target"]!=0:
-                police_invest[r["user_id"]]=r["investigate_target"]
+                pol_invest[r["user_id"]]=r["investigate_target"]
     final_dead=None
     if mafia_kill_target:
-        healed=any(doctor_heals[k]==mafia_kill_target for k in doctor_heals)
+        healed=any(doc_heal[k]==mafia_kill_target for k in doc_heal)
         if not healed:
             c.execute("""
             UPDATE mafia_players
@@ -747,12 +807,12 @@ async def resolve_night_actions(session_id, group_id, context):
             WHERE session_id=%s AND user_id=%s
             """,(session_id, mafia_kill_target))
             final_dead=mafia_kill_target
-    for pol_id, suspect_id in police_invest.items():
+    for pol_id, suspect_id in pol_invest.items():
         c.execute("SELECT role,is_alive FROM mafia_players WHERE session_id=%s AND user_id=%s",(session_id,suspect_id))
         sr=c.fetchone()
         if sr:
             try:
-                await context.bot.send_message(pol_id,f"[조사결과] {suspect_id}:{sr['role']}")
+                await context.bot.send_message(pol_id, f"[조사결과]{suspect_id}:{sr['role']}")
             except:
                 pass
     c.execute("""
@@ -764,7 +824,7 @@ async def resolve_night_actions(session_id, group_id, context):
     c.close();conn.close()
     if final_dead:
         try:
-            await context.bot.send_message(group_id, text=f"밤 사이에 {final_dead}님이 사망.")
+            await context.bot.send_message(group_id, f"밤 사이에 {final_dead}님이 사망.")
         except:
             pass
 
@@ -784,15 +844,16 @@ async def resolve_day_vote(session_id, group_id, context):
         except:
             pass
         if check_mafia_win_condition(session_id):
-            await context.bot.send_message(group_id,"게임 종료.")
+            await context.bot.send_message(group_id,"게임종료.")
             return True
         return False
     vote_count={}
     for v in votes:
         vt=v["vote_target"]
         vote_count[vt]=vote_count.get(vt,0)+1
-    sorted_v=sorted(vote_count.items(), key=lambda x:x[1],reverse=True)
+    sorted_v=sorted(vote_count.items(), key=lambda x:x[1], reverse=True)
     top_user, top_cnt=sorted_v[0]
+
     c.execute("""
     UPDATE mafia_players
     SET is_alive=FALSE, role='dead'
@@ -801,7 +862,7 @@ async def resolve_day_vote(session_id, group_id, context):
     conn.commit()
     c.close();conn.close()
     try:
-        await context.bot.send_message(group_id, text=f"{top_user}님이 {top_cnt}표로 처형되었습니다.")
+        await context.bot.send_message(group_id, f"{top_user}님이 {top_cnt}표로 처형되었습니다.")
     except:
         pass
     if check_mafia_win_condition(session_id):
@@ -829,16 +890,16 @@ async def mafia_kill_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     c.execute("SELECT role,is_alive FROM mafia_players WHERE session_id=%s AND user_id=%s",(sess_id,uid))
     row=c.fetchone()
     if not row or row["role"]!="Mafia" or not row["is_alive"]:
-        await update.message.reply_text("마피아아님 or 사망.")
+        await update.message.reply_text("마피아아님or사망.")
         c.close();conn.close()
         return
     c.execute("UPDATE mafia_players SET vote_target=%s WHERE session_id=%s AND user_id=%s",(tgt,sess_id,uid))
     conn.commit();c.close();conn.close()
-    await update.message.reply_text(f"{tgt}님을 살해 대상 지정.")
+    await update.message.reply_text(f"{tgt}님을 살해 대상으로 설정.")
 
 async def mafia_doctor_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type!="private":
-        await update.message.reply_text("개인채팅.")
+        await update.message.reply_text("개인채팅에서만.")
         return
     args=context.args
     if len(args)<2:
@@ -861,11 +922,11 @@ async def mafia_doctor_command(update:Update, context:ContextTypes.DEFAULT_TYPE)
         return
     c.execute("UPDATE mafia_players SET heal_target=%s WHERE session_id=%s AND user_id=%s",(tgt,sess_id,uid))
     conn.commit();c.close();conn.close()
-    await update.message.reply_text(f"{tgt}님을 치료대상으로 설정.")
+    await update.message.reply_text(f"{tgt}님을 치료 대상으로 설정.")
 
 async def mafia_police_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type!="private":
-        await update.message.reply_text("개인채팅.")
+        await update.message.reply_text("개인채팅에서만.")
         return
     args=context.args
     if len(args)<2:
@@ -883,13 +944,12 @@ async def mafia_police_command(update:Update, context:ContextTypes.DEFAULT_TYPE)
     c.execute("SELECT role,is_alive FROM mafia_players WHERE session_id=%s AND user_id=%s",(sess_id,uid))
     row=c.fetchone()
     if not row or row["role"]!="Police" or not row["is_alive"]:
-        await update.message.reply_text("경찰아님 or 사망.")
+        await update.message.reply_text("경찰 아님 or 사망.")
         c.close();conn.close()
         return
     c.execute("UPDATE mafia_players SET investigate_target=%s WHERE session_id=%s AND user_id=%s",(tgt,sess_id,uid))
     conn.commit();c.close();conn.close()
     await update.message.reply_text(f"{tgt}님 조사 대상으로 설정.")
-
 
 async def mafia_vote_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     args=context.args
@@ -900,7 +960,7 @@ async def mafia_vote_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     try:
         tgt=int(tgt_str)
     except:
-        await update.message.reply_text("유효ID아님.")
+        await update.message.reply_text("유효한ID아님.")
         return
     uid=update.effective_user.id
     conn=get_db_conn()
@@ -914,7 +974,7 @@ async def mafia_vote_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     c.execute("SELECT is_alive FROM mafia_players WHERE session_id=%s AND user_id=%s",(sess_id,uid))
     rr=c.fetchone()
     if not rr or not rr["is_alive"]:
-        await update.message.reply_text("죽었거나참가X.")
+        await update.message.reply_text("죽었거나 참가X.")
         c.close();conn.close()
         return
     c.execute("""
@@ -922,22 +982,23 @@ async def mafia_vote_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     SET vote_target=%s
     WHERE session_id=%s AND user_id=%s
     """,(tgt,sess_id,uid))
-    conn.commit();c.close();conn.close()
+    conn.commit()
+    c.close()
+    conn.close()
     await update.message.reply_text(f"{tgt}님에게 투표.")
 
-
 ###############################################################################
-# 8. RPG (직업/스킬/턴제전투 + /내정보)
+# 8. RPG (던전 전투+아이템 atk/hp 보너스 적용, 죽으면 HP회복+쿨다운)
 ###############################################################################
 rpg_fight_state={}
+rpg_cooldown={}  # uid -> timestamp (끝나는 시각)
 
 async def rpg_create_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     uid=update.effective_user.id
-    uf=update.effective_user.first_name or ""
-    ul=update.effective_user.last_name or ""
+    fn=update.effective_user.first_name or ""
+    ln=update.effective_user.last_name or ""
     un=update.effective_user.username or ""
-    ensure_user_in_db(uid, uf, ul, un)
-
+    ensure_user_in_db(uid, fn, ln, un)
     conn=get_db_conn()
     c=conn.cursor()
     c.execute("SELECT * FROM rpg_characters WHERE user_id=%s",(uid,))
@@ -952,8 +1013,7 @@ async def rpg_create_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     """,(uid,"none"))
     conn.commit()
     c.close();conn.close()
-    await update.message.reply_text("캐릭터 생성 완료!/rpg직업선택")
-
+    await update.message.reply_text("캐릭터 생성완료! /rpg직업선택 으로 직업을 고르세요.")
 
 async def rpg_set_job_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     kb=[
@@ -961,14 +1021,14 @@ async def rpg_set_job_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
       [InlineKeyboardButton("마법사", callback_data="rpg_job_mage")],
       [InlineKeyboardButton("도적", callback_data="rpg_job_thief")]
     ]
-    await update.message.reply_text("직업선택:",reply_markup=InlineKeyboardMarkup(kb))
+    await update.message.reply_text("직업을 선택하세요:", reply_markup=InlineKeyboardMarkup(kb))
 
 async def rpg_job_callback_handler(update:Update, context:ContextTypes.DEFAULT_TYPE):
     q=update.callback_query
     data=q.data
     await q.answer()
     if not data.startswith("rpg_job_"):
-        await q.edit_message_text("직업콜백 오류.")
+        await q.edit_message_text("직업콜백오류.")
         return
     job=data.split("_",2)[2]
     uid=q.from_user.id
@@ -977,19 +1037,19 @@ async def rpg_job_callback_handler(update:Update, context:ContextTypes.DEFAULT_T
     c.execute("SELECT * FROM rpg_characters WHERE user_id=%s",(uid,))
     row=c.fetchone()
     if not row:
-        await q.edit_message_text("캐릭터 없음./rpg생성")
+        await q.edit_message_text("캐릭터없음. /rpg생성 먼저.")
         c.close();conn.close()
         return
     if row["job"]!="none":
-        await q.edit_message_text("이미직업있음.")
+        await q.edit_message_text("이미 직업선택됨.")
         c.close();conn.close()
         return
     if job=="warrior":
-        hp=120; atk=12
+        hp=120;atk=12
     elif job=="mage":
-        hp=80; atk=15
+        hp=80;atk=15
     else:
-        hp=100; atk=10
+        hp=100;atk=10
     c.execute("""
     UPDATE rpg_characters
     SET job=%s,hp=%s,max_hp=%s,atk=%s
@@ -997,8 +1057,7 @@ async def rpg_job_callback_handler(update:Update, context:ContextTypes.DEFAULT_T
     """,(job,hp,hp,atk,uid))
     conn.commit()
     c.close();conn.close()
-    await q.edit_message_text(f"{job} 직업선택완료!")
-
+    await q.edit_message_text(f"{job} 직업선택 완료!")
 
 async def rpg_status_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     uid=update.effective_user.id
@@ -1020,29 +1079,41 @@ async def rpg_status_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     sp=row["skill_points"]
     msg=(f"[캐릭터]\n"
          f"직업:{job}\n"
-         f"레벨:{lv},EXP:{xp}/{lv*100}\n"
-         f"HP:{hp}/{mhp},ATK:{atk}\n"
-         f"Gold:{gold},스킬포인트:{sp}")
+         f"레벨:{lv}, EXP:{xp}/{lv*100}\n"
+         f"HP:{hp}/{mhp}, ATK:{atk}\n"
+         f"Gold:{gold}, 스킬포인트:{sp}")
     await update.message.reply_text(msg)
 
-
 async def rpg_dungeon_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
+    uid=update.effective_user.id
+    now_ts=datetime.datetime.now().timestamp()
+    # 쿨다운?
+    if uid in rpg_cooldown:
+        if now_ts<rpg_cooldown[uid]:
+            remain=int(rpg_cooldown[uid]-now_ts)
+            await update.message.reply_text(f"던전 쿨다운 {remain}초 남음.")
+            return
     kb=[
-      [InlineKeyboardButton("쉬움",callback_data="rdsel_easy")],
-      [InlineKeyboardButton("보통",callback_data="rdsel_normal")],
-      [InlineKeyboardButton("어려움",callback_data="rdsel_hard")]
+      [InlineKeyboardButton("공격(쉬움)", callback_data="rdsel_easy")],
+      [InlineKeyboardButton("공격(보통)", callback_data="rdsel_normal")],
+      [InlineKeyboardButton("공격(어려움)", callback_data="rdsel_hard")]
     ]
-    await update.message.reply_text("던전 난이도 선택(턴제+스킬):",reply_markup=InlineKeyboardMarkup(kb))
+    await update.message.reply_text("던전 난이도 선택:", reply_markup=InlineKeyboardMarkup(kb))
 
 async def rpg_dungeon_callback(update:Update, context:ContextTypes.DEFAULT_TYPE):
     q=update.callback_query
     data=q.data
     await q.answer()
     uid=q.from_user.id
-    if not data.startswith("rdsel_"):
-        await q.edit_message_text("던전콜백오류")
-        return
-    diff=data.split("_",1)[1]
+
+    now_ts=datetime.datetime.now().timestamp()
+    if uid in rpg_cooldown:
+        if now_ts<rpg_cooldown[uid]:
+            remain=int(rpg_cooldown[uid]-now_ts)
+            await q.edit_message_text(f"던전 쿨다운 {remain}초 남음.")
+            return
+
+    diff=data.split("_",1)[1]  # easy/normal/hard
     if diff=="easy":
         monster="슬라임"
         mhp=40;matk=5
@@ -1052,16 +1123,37 @@ async def rpg_dungeon_callback(update:Update, context:ContextTypes.DEFAULT_TYPE)
     else:
         monster="드래곤"
         mhp=150;matk=20
+
     conn=get_db_conn()
     c=conn.cursor()
     c.execute("SELECT * FROM rpg_characters WHERE user_id=%s",(uid,))
     char=c.fetchone()
     if not char:
-        await q.edit_message_text("캐릭터없음./rpg생성")
+        await q.edit_message_text("캐릭터없음.")
         c.close();conn.close()
         return
-    p_hp=char["hp"]
-    p_atk=char["atk"]
+
+    # 아이템 보너스 계산
+    base_hp=char["hp"]
+    base_atk=char["atk"]
+    # 아이템 합
+    c.execute("""
+    SELECT inv.quantity,it.atk_bonus,it.hp_bonus
+    FROM rpg_inventory inv
+    JOIN rpg_items it ON it.item_id=inv.item_id
+    WHERE inv.user_id=%s
+    """,(uid,))
+    invrows=c.fetchall()
+    sum_atk=0
+    sum_hp=0
+    for i in invrows:
+        sum_atk+=(i["atk_bonus"]*i["quantity"])
+        sum_hp+=(i["hp_bonus"]*i["quantity"])
+
+    p_hp=base_hp+sum_hp  # 전투 시작 체력
+    p_atk=base_atk+sum_atk
+
+    # 스킬 목록
     c.execute("""
     SELECT s.skill_id,s.name,s.damage,s.heal,s.mana_cost
     FROM rpg_learned_skills ls
@@ -1080,11 +1172,16 @@ async def rpg_dungeon_callback(update:Update, context:ContextTypes.DEFAULT_TYPE)
       "phase":"ongoing",
       "skills":learned
     }
-    kb=[[InlineKeyboardButton("👊 Attack",callback_data=f"rfd_{uid}_atk"),
-         InlineKeyboardButton("🔥 Skill",callback_data=f"rfd_{uid}_skill"),
-         InlineKeyboardButton("🏃 Run",callback_data=f"rfd_{uid}_run")]]
-    txt=f"{monster} 출현!\n몬스터HP:{mhp},내HP:{p_hp}\n행동선택:"
-    await q.edit_message_text(txt,reply_markup=InlineKeyboardMarkup(kb))
+
+    kb=[
+      [InlineKeyboardButton("공격",callback_data=f"rfd_{uid}_atk"),
+       InlineKeyboardButton("스킬",callback_data=f"rfd_{uid}_skill"),
+       InlineKeyboardButton("도망",callback_data=f"rfd_{uid}_run")]
+    ]
+    txt=(f"{monster} 출현!\n"
+         f"몬스터HP:{mhp}, 내HP:{p_hp}\n"
+         "행동선택:")
+    await q.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb))
 
 async def rpg_fight_action_callback(update:Update, context:ContextTypes.DEFAULT_TYPE):
     q=update.callback_query
@@ -1096,12 +1193,13 @@ async def rpg_fight_action_callback(update:Update, context:ContextTypes.DEFAULT_
     action=parts[2]
     uid=q.from_user.id
     if str(uid)!=owner_str:
-        await q.answer("이 전투는 당신것 아님!", show_alert=True)
+        await q.answer("이 전투는 당신 전투 아님!", show_alert=True)
         return
     st=rpg_fight_state.get(uid)
     if not st or st["phase"]!="ongoing":
-        await q.answer("전투끝 or 없음.")
+        await q.answer("전투없거나끝.")
         return
+
     monster=st["monster"]
     m_hp=st["m_hp"]
     m_atk=st["m_atk"]
@@ -1114,7 +1212,7 @@ async def rpg_fight_action_callback(update:Update, context:ContextTypes.DEFAULT_
         await q.edit_message_text("도망쳤습니다. 전투종료!")
         return
     elif action=="atk":
-        dmg_p=random.randint(p_atk-2,p_atk+2) if p_atk>2 else p_atk
+        dmg_p=random.randint(p_atk-2,p_atk+2)
         if dmg_p<0:dmg_p=0
         m_hp-=dmg_p
         dmg_m=0
@@ -1126,58 +1224,59 @@ async def rpg_fight_action_callback(update:Update, context:ContextTypes.DEFAULT_
         st["p_hp"]=p_hp
         if p_hp<=0:
             st["phase"]="end"
-            p_hp=1
-            st["p_hp"]=1
-            await q.edit_message_text(f"{monster}에게 패배..HP->1\n전투끝!")
+            # 죽음 -> HP풀회복, 60초쿨
+            await handle_rpg_death(uid)
+            await q.edit_message_text(f"{monster}에게 패배! HP회복, 60초후 재도전가능")
             return
         elif m_hp<=0:
             st["phase"]="end"
             await rpg_fight_victory(uid,monster,q,dmg_p,dmg_m,m_hp,p_hp)
             return
         else:
-            kb=[[InlineKeyboardButton("👊 Attack",callback_data=f"rfd_{uid}_atk"),
-                 InlineKeyboardButton("🔥 Skill",callback_data=f"rfd_{uid}_skill"),
-                 InlineKeyboardButton("🏃 Run",callback_data=f"rfd_{uid}_run")]]
-            txt=(f"{monster}HP:{m_hp},내HP:{p_hp}\n"
+            kb=[
+              [InlineKeyboardButton("공격",callback_data=f"rfd_{uid}_atk"),
+               InlineKeyboardButton("스킬",callback_data=f"rfd_{uid}_skill"),
+               InlineKeyboardButton("도망",callback_data=f"rfd_{uid}_run")]
+            ]
+            txt=(f"{monster}HP:{m_hp}, 내HP:{p_hp}\n"
                  f"(내공격:{dmg_p},몬공:{dmg_m})\n"
                  "행동선택:")
             await q.edit_message_text(txt,reply_markup=InlineKeyboardMarkup(kb))
     elif action=="skill":
         if not skills:
-            await q.edit_message_text("배운스킬없음.")
+            await q.edit_message_text("배운스킬이 없습니다.")
             return
         kb=[]
         for s in skills:
             sid=s["skill_id"]
             nm=s["name"]
-            kb.append([InlineKeyboardButton(nm,callback_data=f"rfd_{uid}_useSkill_{sid}")])
-        kb.append([InlineKeyboardButton("뒤로",callback_data=f"rfd_{uid}_back")])
-        txt=f"스킬선택.\n{monster}HP:{m_hp},내HP:{p_hp}"
-        await q.edit_message_text(txt,reply_markup=InlineKeyboardMarkup(kb))
+            kb.append([InlineKeyboardButton(nm, callback_data=f"rfd_{uid}_useSkill_{sid}")])
+        kb.append([InlineKeyboardButton("뒤로", callback_data=f"rfd_{uid}_back")])
+        txt=f"{monster}HP:{m_hp}, 내HP:{p_hp}\n스킬선택:"
+        await q.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb))
     elif action=="back":
-        kb=[[InlineKeyboardButton("👊 Attack",callback_data=f"rfd_{uid}_atk"),
-             InlineKeyboardButton("🔥 Skill",callback_data=f"rfd_{uid}_skill"),
-             InlineKeyboardButton("🏃 Run",callback_data=f"rfd_{uid}_run")]]
-        txt=(f"{monster}HP:{m_hp},내HP:{p_hp}\n행동선택:")
+        kb=[
+          [InlineKeyboardButton("공격",callback_data=f"rfd_{uid}_atk"),
+           InlineKeyboardButton("스킬",callback_data=f"rfd_{uid}_skill"),
+           InlineKeyboardButton("도망",callback_data=f"rfd_{uid}_run")]
+        ]
+        txt=(f"{monster}HP:{m_hp}, 내HP:{p_hp}\n행동선택:")
         await q.edit_message_text(txt,reply_markup=InlineKeyboardMarkup(kb))
     else:
-        # skill
+        # useSkill sid
         if action.startswith("useSkill"):
-            sid_str=action.split("_")[1] if "_" in action else None
-            if not sid_str:
-                await q.answer("스킬ID 오류", show_alert=True)
-                return
+            sid_str=action.split("_")[1]
             try:
                 sid=int(sid_str)
             except:
-                await q.answer("스킬ID 파싱오류",show_alert=True)
+                await q.answer("스킬ID오류",show_alert=True)
                 return
             skill=None
             for s in skills:
                 if s["skill_id"]==sid:
                     skill=s;break
             if not skill:
-                await q.answer("해당스킬없음", show_alert=True)
+                await q.answer("스킬없음",show_alert=True)
                 return
             dmg=skill["damage"]
             heal=skill["heal"]
@@ -1200,26 +1299,42 @@ async def rpg_fight_action_callback(update:Update, context:ContextTypes.DEFAULT_
             st["p_hp"]=p_hp
             if p_hp<=0:
                 st["phase"]="end"
-                p_hp=1
-                st["p_hp"]=1
-                await q.edit_message_text("스킬쓰다 사망..HP->1\n전투끝!")
+                await handle_rpg_death(uid)
+                await q.edit_message_text("스킬쓰다 패배! HP회복, 60초후 재도전가능.")
                 return
             elif m_hp<=0:
                 st["phase"]="end"
                 await rpg_fight_victory(uid,monster,q,var_dmg,dmg_m,m_hp,p_hp,True)
                 return
             else:
-                kb=[[InlineKeyboardButton("👊 Attack",callback_data=f"rfd_{uid}_atk"),
-                     InlineKeyboardButton("🔥 Skill",callback_data=f"rfd_{uid}_skill"),
-                     InlineKeyboardButton("🏃 Run",callback_data=f"rfd_{uid}_run")]]
-                txt=(f"{monster}HP:{m_hp},내HP:{p_hp}\n"
+                kb=[
+                  [InlineKeyboardButton("공격",callback_data=f"rfd_{uid}_atk"),
+                   InlineKeyboardButton("스킬",callback_data=f"rfd_{uid}_skill"),
+                   InlineKeyboardButton("도망",callback_data=f"rfd_{uid}_run")]
+                ]
+                txt=(f"{monster}HP:{m_hp}, 내HP:{p_hp}\n"
                      f"(스킬사용 dmg:{var_dmg}, heal:{var_heal},몬공:{dmg_m})\n"
                      "행동선택:")
                 await q.edit_message_text(txt,reply_markup=InlineKeyboardMarkup(kb))
         else:
-            await q.answer("action오류",show_alert=True)
+            await q.answer("알수없는action",show_alert=True)
 
-async def rpg_fight_victory(uid:int, monster:str, query, dmg_p:int, dmg_m:int, m_hp:int, p_hp:int, skillUsed=False):
+async def handle_rpg_death(uid:int):
+    """ 전투 패배 -> HP 풀회복 & 60초 쿨다운 """
+    conn=get_db_conn()
+    c=conn.cursor()
+    c.execute("SELECT max_hp FROM rpg_characters WHERE user_id=%s",(uid,))
+    row=c.fetchone()
+    if not row:
+        c.close();conn.close()
+        return
+    mhp=row["max_hp"]
+    c.execute("UPDATE rpg_characters SET hp=%s WHERE user_id=%s",(mhp,uid))
+    conn.commit()
+    c.close();conn.close()
+    rpg_cooldown[uid]=datetime.datetime.now().timestamp()+60
+
+async def rpg_fight_victory(uid:int, monster:str, q, dmg_p:int, dmg_m:int, m_hp:int, p_hp:int, skillUsed=False):
     reward_exp=30
     reward_gold=50
     conn=get_db_conn()
@@ -1228,7 +1343,7 @@ async def rpg_fight_victory(uid:int, monster:str, query, dmg_p:int, dmg_m:int, m
     row=c.fetchone()
     if not row:
         c.close();conn.close()
-        await query.edit_message_text(f"{monster} 처치!\n(캐릭터 없음, 보상X)\n전투끝!")
+        await q.edit_message_text(f"{monster} 처치!(캐릭터없음 보상X)")
         return
     lv=row["level"]
     xp=row["exp"]+reward_exp
@@ -1246,7 +1361,7 @@ async def rpg_fight_victory(uid:int, monster:str, query, dmg_p:int, dmg_m:int, m
         hp=mhp
         atk+=5
         lvup_count+=1
-    # 승리 후 HP 전부 회복
+    # 승리 후 HP전부회복
     hp=mhp
     c.execute("""
     UPDATE rpg_characters
@@ -1260,29 +1375,30 @@ async def rpg_fight_victory(uid:int, monster:str, query, dmg_p:int, dmg_m:int, m
         lu_txt=f"\n레벨 {lvup_count}번 상승!"
     txt=(f"{monster} 처치!\n"
          f"획득:EXP+{reward_exp}, GOLD+{reward_gold}{lu_txt}\n"
-         f"HP 전부 회복!\n"
+         "HP 전부 회복!\n"
          "전투끝!")
-    await query.edit_message_text(txt)
-
+    await q.edit_message_text(txt)
 
 async def rpg_shop_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
+    """ 상점 아이템 목록/버튼 """
     conn=get_db_conn()
     c=conn.cursor()
+    # 예시로 밸런스 예쁜 아이템 몇개만 미리 insert해놔도 됨(이 코드는 안함)
     c.execute("SELECT * FROM rpg_items ORDER BY price ASC")
     items=c.fetchall()
     c.close();conn.close()
     if not items:
-        await update.message.reply_text("상점 아이템이 없음.")
+        await update.message.reply_text("상점에 아이템이 없음.")
         return
     text="[상점 목록]\n"
     kb=[]
     for it in items:
-        text+=(f"{it['item_id']}.{it['name']} "
-               f"(가격:{it['price']},ATK+{it['atk_bonus']},HP+{it['hp_bonus']})\n")
-        kb.append([InlineKeyboardButton(f"{it['name']} 구매", callback_data=f"rpg_shop_buy_{it['item_id']}")])
-    await update.message.reply_text(text,reply_markup=InlineKeyboardMarkup(kb))
+        text+=(f"{it['item_id']}.{it['name']} (가격:{it['price']},ATK+{it['atk_bonus']},HP+{it['hp_bonus']})\n")
+        kb.append([InlineKeyboardButton(f"{it['name']} 구매",callback_data=f"rpg_shop_buy_{it['item_id']}")])
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb))
 
 async def rpg_shop_callback(update:Update, context:ContextTypes.DEFAULT_TYPE):
+    """ 상점 구매 콜백 """
     q=update.callback_query
     data=q.data
     await q.answer()
@@ -1293,7 +1409,7 @@ async def rpg_shop_callback(update:Update, context:ContextTypes.DEFAULT_TYPE):
     try:
         item_id=int(iid)
     except:
-        await q.edit_message_text("itemID오류.")
+        await q.edit_message_text("itemID 오류.")
         return
     uid=q.from_user.id
     conn=get_db_conn()
@@ -1326,8 +1442,7 @@ async def rpg_shop_callback(update:Update, context:ContextTypes.DEFAULT_TYPE):
     """,(uid,item_id))
     conn.commit()
     c.close();conn.close()
-    await q.edit_message_text(f"{irow['name']} 구매완료! -{price}gold")
-
+    await q.edit_message_text(f"{irow['name']} 구매완료! (-{price} gold)")
 
 async def rpg_inventory_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     uid=update.effective_user.id
@@ -1423,7 +1538,7 @@ async def rpg_skill_learn_command(update:Update, context:ContextTypes.DEFAULT_TY
     c.execute("UPDATE rpg_characters SET skill_points=skill_points-1 WHERE user_id=%s",(uid,))
     conn.commit()
     c.close();conn.close()
-    await update.message.reply_text("스킬 습득 완료!")
+    await update.message.reply_text("스킬습득 완료!")
 
 async def rpg_myinfo_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     uid=update.effective_user.id
@@ -1432,7 +1547,7 @@ async def rpg_myinfo_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     c.execute("SELECT * FROM rpg_characters WHERE user_id=%s",(uid,))
     row=c.fetchone()
     if not row:
-        await update.message.reply_text("캐릭터없음.")
+        await update.message.reply_text("캐릭터 없음.")
         c.close();conn.close()
         return
     job=row["job"]
@@ -1443,16 +1558,17 @@ async def rpg_myinfo_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
     atk=row["atk"]
     gold=row["gold"]
     sp=row["skill_points"]
-    msg=(f"[내정보]\n"
-         f"직업:{job}\n"
-         f"레벨:{lv},EXP:{xp}/{lv*100}\n"
-         f"HP:{hp}/{mhp},ATK:{atk}\n"
-         f"Gold:{gold},스킬포인트:{sp}\n")
+    msg=(f"[내정보]\n직업:{job}\n"
+         f"레벨:{lv}, EXP:{xp}/{lv*100}\n"
+         f"HP:{hp}/{mhp}, ATK:{atk}\n"
+         f"Gold:{gold}, 스킬포인트:{sp}\n")
+
+    # 아이템 인벤
     c.execute("""
     SELECT inv.item_id,inv.quantity,it.name,it.atk_bonus,it.hp_bonus
     FROM rpg_inventory inv
     JOIN rpg_items it ON it.item_id=inv.item_id
-    WHERE user_id=%s
+    WHERE inv.user_id=%s
     """,(uid,))
     inv=c.fetchall()
     c.close();conn.close()
@@ -1462,24 +1578,24 @@ async def rpg_myinfo_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
         msg+="\n[인벤토리]\n"
         for i in inv:
             msg+=(f"- {i['name']} x{i['quantity']} (ATK+{i['atk_bonus']},HP+{i['hp_bonus']})\n")
+
     await update.message.reply_text(msg)
 
-
 ###############################################################################
-# 9. 인라인 메뉴(호출자만 클릭 가능)
+# 9. 인라인 메뉴
 ###############################################################################
 async def menu_callback_handler(update:Update, context:ContextTypes.DEFAULT_TYPE):
     q=update.callback_query
     data=q.data
     parts=data.split("|",1)
     if len(parts)<2:
-        await q.answer("콜백데이터오류", show_alert=True)
+        await q.answer("콜백에러", show_alert=True)
         return
     owner_id_str=parts[0]
     cmd=parts[1]
     caller_id=str(q.from_user.id)
     if caller_id!=owner_id_str:
-        await q.answer("이건 당신 메뉴가 아님!", show_alert=True)
+        await q.answer("이건 당신 메뉴가 아닙니다!", show_alert=True)
         return
     await q.answer()
 
@@ -1496,18 +1612,21 @@ async def menu_callback_handler(update:Update, context:ContextTypes.DEFAULT_TYPE
             "/마피아시작 /마피아목록\n"
             "/참가 <세션ID>\n"
             "/마피아강제시작 <세션ID>\n"
-            "(마피아) /살해 <세션ID> <유저ID>\n"
-            "(의사) /치료 <세션ID> <유저ID>\n"
-            "(경찰) /조사 <세션ID> <유저ID>\n"
-            "(그룹) /투표 <세션ID> <유저ID>"
+            "/방나가기 <세션ID>\n"
+            "(마피아DM) /살해 <세션ID> <유저ID>\n"
+            "(의사DM) /치료 <세션ID> <유저ID>\n"
+            "(경찰DM)/조사 <세션ID> <유저ID>\n"
+            "(그룹)/투표 <세션ID> <유저ID>"
         )
         kb=[[InlineKeyboardButton("뒤로",callback_data=f"{owner_id_str}|menu_games")]]
         await q.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb))
     elif cmd=="menu_rpg":
         txt=(
             "[RPG]\n"
-            "/rpg생성 /rpg직업선택 /rpg상태 /던전 /상점 /인벤토리\n"
-            "/스킬목록 /스킬습득 <ID> /내정보"
+            "/rpg생성 /rpg직업선택 /rpg상태\n"
+            "/던전 /상점 /인벤토리\n"
+            "/스킬목록 /스킬습득 <ID>\n"
+            "/내정보"
         )
         kb=[[InlineKeyboardButton("뒤로",callback_data=f"{owner_id_str}|menu_games")]]
         await q.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb))
@@ -1517,19 +1636,19 @@ async def menu_callback_handler(update:Update, context:ContextTypes.DEFAULT_TYPE
           [InlineKeyboardButton("투표/설문",callback_data=f"{owner_id_str}|menu_group_vote")],
           [InlineKeyboardButton("뒤로",callback_data=f"{owner_id_str}|menu_back_main")]
         ]
-        await q.edit_message_text("그룹관리 메뉴", reply_markup=InlineKeyboardMarkup(kb))
+        await q.edit_message_text("그룹관리 메뉴",reply_markup=InlineKeyboardMarkup(kb))
     elif cmd=="menu_group_announce":
         kb=[[InlineKeyboardButton("뒤로",callback_data=f"{owner_id_str}|menu_group")]]
-        await q.edit_message_text("공지: /announce <메시지>", reply_markup=InlineKeyboardMarkup(kb))
+        await q.edit_message_text("공지:/announce <메시지>",reply_markup=InlineKeyboardMarkup(kb))
     elif cmd=="menu_group_vote":
         kb=[[InlineKeyboardButton("뒤로",callback_data=f"{owner_id_str}|menu_group")]]
-        await q.edit_message_text("투표: /vote <주제>", reply_markup=InlineKeyboardMarkup(kb))
+        await q.edit_message_text("투표:/vote <주제>",reply_markup=InlineKeyboardMarkup(kb))
     elif cmd=="menu_subscribe":
         s=is_subscribed_db(int(caller_id))
         stat="구독자 ✅" if s else "비구독 ❌"
         toggle="구독해지" if s else "구독하기"
         kb=[
-          [InlineKeyboardButton(toggle, callback_data=f"{owner_id_str}|menu_sub_toggle")],
+          [InlineKeyboardButton(toggle,callback_data=f"{owner_id_str}|menu_sub_toggle")],
           [InlineKeyboardButton("뒤로",callback_data=f"{owner_id_str}|menu_back_main")]
         ]
         await q.edit_message_text(f"현재상태:{stat}", reply_markup=InlineKeyboardMarkup(kb))
@@ -1537,12 +1656,12 @@ async def menu_callback_handler(update:Update, context:ContextTypes.DEFAULT_TYPE
         s=is_subscribed_db(int(caller_id))
         set_subscribe(int(caller_id), not s)
         nowtxt="구독자 ✅" if not s else "비구독 ❌"
-        kb=[[InlineKeyboardButton("뒤로", callback_data=f"{owner_id_str}|menu_subscribe")]]
-        await q.edit_message_text(f"이제 {nowtxt} 되었습니다.",reply_markup=InlineKeyboardMarkup(kb))
+        kb=[[InlineKeyboardButton("뒤로",callback_data=f"{owner_id_str}|menu_subscribe")]]
+        await q.edit_message_text(f"이제 {nowtxt} 되었습니다.", reply_markup=InlineKeyboardMarkup(kb))
     elif cmd=="menu_ranking":
         txt=get_daily_ranking_text()
         kb=[[InlineKeyboardButton("뒤로",callback_data=f"{owner_id_str}|menu_back_main")]]
-        await q.edit_message_text(txt,reply_markup=InlineKeyboardMarkup(kb))
+        await q.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb))
     elif cmd=="menu_back_main":
         kb=[
           [InlineKeyboardButton("🎮 게임", callback_data=f"{owner_id_str}|menu_games"),
@@ -1555,7 +1674,7 @@ async def menu_callback_handler(update:Update, context:ContextTypes.DEFAULT_TYPE
         await q.edit_message_text("알 수 없는 메뉴.")
 
 ###############################################################################
-# 11. 일반 텍스트(명령어X)
+# 11. 일반 텍스트
 ###############################################################################
 async def text_message_handler(update:Update, context:ContextTypes.DEFAULT_TYPE):
     await filter_bad_words_and_spam_and_links(update, context)
@@ -1563,7 +1682,7 @@ async def text_message_handler(update:Update, context:ContextTypes.DEFAULT_TYPE)
         increment_daily_chat_count(update.effective_user.id)
 
 ###############################################################################
-# 12. 스케줄러 (매일0시)
+# 12. 스케줄러
 ###############################################################################
 def schedule_jobs():
     sch=BackgroundScheduler(timezone=str(KST))
@@ -1588,15 +1707,16 @@ def main():
     app.add_handler(CommandHandler("vote", vote_command))
 
     import re
-    # 한글(Regex)
+    # 한글 명령어
     app.add_handler(MessageHandler(filters.Regex(r"^/시작(\s.*)?$"), hangeul_start_command))
     app.add_handler(MessageHandler(filters.Regex(r"^/도움말(\s.*)?$"), hangeul_help_command))
     app.add_handler(MessageHandler(filters.Regex(r"^/랭킹(\s.*)?$"), hangeul_ranking_command))
 
-    # 마피아(한글 래퍼)
+    # 마피아
     app.add_handler(MessageHandler(filters.Regex(r"^/마피아시작(\s.*)?$"), hangeul_mafia_start_command))
     app.add_handler(MessageHandler(filters.Regex(r"^/참가(\s.*)?$"), hangeul_mafia_join_command))
     app.add_handler(MessageHandler(filters.Regex(r"^/마피아강제시작(\s.*)?$"), hangeul_mafia_force_start_command))
+    app.add_handler(MessageHandler(filters.Regex(r"^/방나가기(\s.*)?$"), hangeul_mafia_leave_command))
     app.add_handler(MessageHandler(filters.Regex(r"^/살해(\s.*)?$"), hangeul_mafia_kill_command))
     app.add_handler(MessageHandler(filters.Regex(r"^/치료(\s.*)?$"), hangeul_mafia_doctor_command))
     app.add_handler(MessageHandler(filters.Regex(r"^/조사(\s.*)?$"), hangeul_mafia_police_command))
@@ -1631,7 +1751,6 @@ def main():
 
     logger.info("봇 시작!")
     app.run_polling()
-
 
 if __name__=="__main__":
     main()
