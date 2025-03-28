@@ -1863,7 +1863,10 @@ def main():
     app.add_handler(CommandHandler("announce", announce_command))
     app.add_handler(CommandHandler("subscribe_toggle", subscribe_toggle_command))
     app.add_handler(CommandHandler("vote", vote_command))
-    app.add_handler(CommandHandler("온", bot_on_command)) # /온
+    app.add_handler(MessageHandler(
+    filters.Regex(r"^/온(\s.*)?$"),  # /온 으로 시작
+    bot_on_command
+))
 
     import re
     # 한글
