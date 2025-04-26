@@ -1,0 +1,29 @@
+# fly.toml for telegram-spinner-bot (production-ready)
+
+# 1. 앱 이름 (flyctl launch 시 지정한 이름과 동일해야 합니다)
+app = "telegram-spinner-bot"
+
+# 2. 주 배포 리전 (가까운 리전을 지정하세요; 예시는 서울(icn))
+primary_region = "icn"
+
+# 3. 프로세스 종료 시그널 & 타임아웃 설정
+kill_signal = "SIGINT"
+kill_timeout = 5
+
+[build]
+  # Dockerfile 경로
+  dockerfile = "Dockerfile"
+
+[env]
+  # 봇에 꼭 필요한 환경변수는 Secrets 로 관리하세요.
+  # flyctl secrets set BOT_TOKEN="your_bot_token"
+  # flyctl secrets set WEB_APP_URL="https://spinner-web.fly.dev"
+  #
+
+[deploy]
+  # 릴리스 단계에 별도 실행할 커맨드가 있으면 여기에 넣습니다.
+  # (예: DB 마이그레이션 등)
+  release_command = ""
+
+# 이 앱은 Polling 기반의 "worker" 앱이므로, 외부 서비스를 노출할 필요가 없습니다.
+# [[services]] 블록을 정의하지 않아도 내부에서 python bot.py 가 실행됩니다.
