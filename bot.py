@@ -8,8 +8,8 @@ from telegram.ext import (
     ContextTypes
 )
 
-BOT_TOKEN   = os.getenv("7698113358:AAEDQpUYdaDJlJxOhukRaSH4dXEpXQkoMGM")
-WEB_APP_URL = os.getenv("spinner-web.fly.dev")  # spinner-web.fly.dev
+BOT_TOKEN   = os.getenv("BOT_TOKEN")
+WEB_APP_URL = os.getenv("WEB_APP_URL")  # spinner-web.fly.dev
 
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     btn = InlineKeyboardButton(
